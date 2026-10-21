@@ -8,6 +8,7 @@ select = ["E", "F", "I", "B", "UP"]
 [tool.mypy]
 strict = true
 plugins = ["pydantic.mypy"]
+files = ["main.py", "clients", "processing"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
