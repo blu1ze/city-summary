@@ -19,10 +19,19 @@ EUR→RUB: 92.85
 
 ## Установка
 
+Вариант 1 — `venv` + `pip`:
+
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+Вариант 2 — [uv](https://docs.astral.sh/uv/) (сам поставит Python 3.12 и зависимости из `uv.lock`):
+
+```bash
+uv sync
+source .venv/bin/activate
 ```
 
 ## Запуск
@@ -31,6 +40,7 @@ pip install -r requirements.txt
 python main.py --city Moscow                  # курс USD→RUB (по умолчанию)
 python main.py --city Moscow --currency EUR   # курс EUR→RUB
 python main.py --city "Saint Petersburg" --json
+python main.py --city Moscow -v               # подробные логи в stderr
 ```
 
 | Аргумент | Описание |
@@ -38,6 +48,8 @@ python main.py --city "Saint Petersburg" --json
 | `--city` | Город (обязательный). Регистр не важен: `moscow` → `Moscow`. |
 | `--currency` | Код валюты из трёх латинских букв, по умолчанию `USD`. |
 | `--json` | Вывести сводку в JSON вместо текста. |
+| `--no-cache` | Не использовать кэш курса. |
+| `-v`, `--verbose` | Логи уровня DEBUG в stderr (по умолчанию — только предупреждения). |
 
 ### Коды выхода
 
@@ -48,7 +60,7 @@ python main.py --city "Saint Petersburg" --json
 | `3` | Город или код валюты не найден (`--city Qwzxzzxq`, `--currency XYZ`) |
 | `4` | Внешний сервис недоступен после повторов или вернул некорректный ответ |
 
-Сообщения об ошибках печатаются в stderr.
+Сообщение об ошибке пишется в stderr вместе с `run_id` для поиска по логам.
 
 ### JSON-вывод
 
@@ -74,15 +86,19 @@ Open-Meteo отдаёт погоду кодом WMO — клиент перев�
 ```text
 city-summary/
 ├── main.py             # CLI: argparse, вызов build_city_summary, вывод, коды выхода
+├── logging_config.py   # structlog -> stderr, run_id в каждой записи
 ├── clients/            # только общение с внешними API
 │   ├── http.py         # общий GET: timeout, retry, Retry-After, разбор JSON
 │   ├── validation.py   # Pydantic-схемы ответов -> InvalidResponseError
 │   ├── exceptions.py   # исключения приложения (NotFound -> 3, ExternalService -> 4)
+│   ├── cache.py        # файловый TTL-кэш
 │   ├── weather.py      # get_weather(city) -> WeatherData
-│   └── rates.py        # get_rate(currency) -> float
-└── processing/
-    ├── preprocessing.py  # правила: warm_clothes, expensive, описание по умолчанию, округление
-    └── service.py        # build_city_summary(city, currency="USD") -> CitySummary
+│   └── rates.py        # get_rate(currency) -> float, кэш на 5 минут
+├── processing/
+│   ├── preprocessing.py  # правила: warm_clothes, expensive, описание по умолчанию, округление
+│   └── service.py        # build_city_summary(city, currency="USD") -> CitySummary
+├── tests/              # pytest + unittest.mock, сеть не трогают
+└── .github/workflows/ci.yml  # GitHub Actions: ruff, mypy, pytest
 ```
 
 - `clients/` не печатает в консоль и не знает про CLI — только HTTP, проверка ответов
@@ -116,10 +132,32 @@ city-summary/
 Флаги считаются по округлённым значениям, чтобы вывод был согласован: `-0.04 °C` выводится как
 `0.0°C`, и тёплая одежда при этом не нужна.
 
+## Дополнительно
+
+- **Логи с `run_id`** — structlog; каждая запись запуска помечена коротким `run_id`; логи идут в
+  stderr, stdout остаётся чистым для сводки и `--json`. Повторные попытки HTTP видны как
+  предупреждения, подробности — с флагом `-v`.
+- **Кэш курса на 5 минут** — файл `~/.cache/city_summary/rates.json` (переопределяется через
+  `CITY_SUMMARY_CACHE_DIR` или `XDG_CACHE_HOME`). Кэш в памяти бесполезен — процесс CLI живёт доли
+  секунды. Ошибки чтения или записи кэша не ломают запрос. Отключается флагом `--no-cache`.
+- **Тесты клиентов через `unittest.mock`** — повторы, `Retry-After`, проверка ответов, коды выхода, кэш.
+- **Типизация** — `mypy --strict`, Pydantic для внешних данных, TypedDict для сводки.
+- **Флаг `--json`**.
+- **CI** — GitHub Actions: ruff, mypy, pytest, синхронность `requirements*.txt` с `uv.lock`.
+
 ## Разработка
 
 ```bash
-pip install -r requirements-dev.txt
-ruff check . && ruff format --check .
-mypy
+uv sync                      # или: pip install -r requirements-dev.txt
+uv run pytest                # или: pytest
+uv run ruff check . && uv run ruff format --check .
+uv run mypy
+```
+
+Зависимости описаны в `pyproject.toml` и зафиксированы в `uv.lock`; `requirements*.txt`
+генерируются из lock-файла:
+
+```bash
+uv export --format requirements-txt --no-hashes --no-dev --no-emit-project -o requirements.txt
+uv export --format requirements-txt --no-hashes --no-emit-project -o requirements-dev.txt
 ```
