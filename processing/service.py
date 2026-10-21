@@ -18,10 +18,12 @@ class CitySummary(TypedDict):
     rates: RateSummary
 
 
-def build_city_summary(city: str, currency: str = "USD") -> CitySummary:
+def build_city_summary(
+    city: str, currency: str = "USD", use_cache: bool = True
+) -> CitySummary:
     """Return weather and the currency rate to the ruble for the city."""
     weather = get_weather(city)
-    rate = get_rate(currency)
+    rate = get_rate(currency, use_cache)
 
     return CitySummary(
         city=weather["city"],

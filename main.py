@@ -63,6 +63,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="вывести сводку в формате JSON",
     )
     parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="не использовать кэш курса",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -105,7 +110,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     log.debug("run_started", city=args.city, currency=args.currency)
 
     try:
-        summary = build_city_summary(args.city, args.currency)
+        summary = build_city_summary(
+            args.city, args.currency, use_cache=not args.no_cache
+        )
     except NotFoundError as exc:
         report_error(exc, run_id)
         return EXIT_NOT_FOUND
