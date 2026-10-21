@@ -1,3 +1,22 @@
+[project]
+name = "city-summary"
+version = "0.1.0"
+description = "CLI: current weather and currency rate summary for a city"
+requires-python = ">=3.12"
+dependencies = [
+    "requests",
+    "pydantic",
+    "structlog",
+]
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "mypy",
+    "pytest",
+    "types-requests",
+]
+
 [tool.ruff]
 line-length = 88
 target-version = "py312"
