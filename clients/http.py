@@ -4,12 +4,15 @@ import time
 from typing import Any, Final
 
 import requests
+import structlog
 
 from clients.exceptions import (
     InvalidResponseError,
     ServiceUnavailableError,
     UpstreamHTTPError,
 )
+
+log = structlog.get_logger(__name__)
 
 TIMEOUT_SECONDS: Final = 5.0
 MAX_RETRIES: Final = 2  # retries after the first attempt, 3 attempts in total
@@ -56,6 +59,7 @@ def get_json(url: str, params: Params | None = None) -> Any:
         # Pause used if this attempt fails and we retry
         pause = BACKOFF_SECONDS[min(attempt, len(BACKOFF_SECONDS) - 1)]
 
+        log.debug("http_get", url=url, attempt=attempt + 1)
         try:
             response = requests.get(url, params=params, timeout=TIMEOUT_SECONDS)
         except RETRYABLE_ERRORS as exc:
@@ -83,6 +87,9 @@ def get_json(url: str, params: Params | None = None) -> Any:
 
         # Here the attempt failed in a retryable way
         if attempt < MAX_RETRIES:
+            log.warning(
+                "http_retry", url=url, attempt=attempt + 1, reason=reason, pause=pause
+            )
             time.sleep(pause)
 
     raise ServiceUnavailableError(

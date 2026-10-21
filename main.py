@@ -7,8 +7,13 @@ import sys
 from collections.abc import Sequence
 from typing import Final
 
-from clients.exceptions import ExternalServiceError, NotFoundError
+import structlog
+
+from clients.exceptions import AppError, ExternalServiceError, NotFoundError
+from logging_config import configure_logging
 from processing.service import CitySummary, build_city_summary
+
+log = structlog.get_logger(__name__)
 
 EXIT_OK: Final = 0
 EXIT_BAD_ARGS: Final = 2  # argparse itself exits with 2 on invalid arguments
@@ -57,6 +62,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="вывести сводку в формате JSON",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="подробные логи в stderr",
+    )
     return parser
 
 
@@ -82,23 +93,31 @@ def format_text(summary: CitySummary) -> str:
     return "\n".join(lines)
 
 
+def report_error(exc: AppError, run_id: str) -> None:
+    """Print the error with the run_id, so the log lines can be found."""
+    print(f"Ошибка: {exc} (run_id={run_id})", file=sys.stderr)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI and return the process exit code."""
     args = build_parser().parse_args(argv)
+    run_id = configure_logging(verbose=args.verbose)
+    log.debug("run_started", city=args.city, currency=args.currency)
 
     try:
         summary = build_city_summary(args.city, args.currency)
     except NotFoundError as exc:
-        print(f"Ошибка: {exc}", file=sys.stderr)
+        report_error(exc, run_id)
         return EXIT_NOT_FOUND
     except ExternalServiceError as exc:
-        print(f"Ошибка: {exc}", file=sys.stderr)
+        report_error(exc, run_id)
         return EXIT_SERVICE_ERROR
 
     if args.json:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
     else:
         print(format_text(summary))
+    log.debug("run_finished")
     return EXIT_OK
 
 
